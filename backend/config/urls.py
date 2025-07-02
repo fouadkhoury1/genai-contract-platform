@@ -16,7 +16,10 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from apps.clients_contracts.views import ContractListCreateView, ContractDetailView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path('api/contracts/', ContractListCreateView.as_view(), name='contract-list-create'),
+    path('api/contracts/<str:contract_id>/', ContractDetailView.as_view(), name='contract-detail')
 ]
