@@ -7,12 +7,14 @@ from bson import ObjectId
 from bson.errors import InvalidId
 import os
 import requests
+from rest_framework.permissions import IsAuthenticated
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 contracts_collection = db["contracts"] 
 
 
 class ContractListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request): 
         contracts = list(contracts_collection.find({}, {'_id': 0}))
         return Response(contracts)
@@ -66,6 +68,7 @@ class ContractListCreateView(APIView):
 
 
 class ContractDetailView(APIView): 
+    permission_classes = [IsAuthenticated]
     def get(self, request, contract_id): 
         try: 
             obj_id = ObjectId(contract_id)
@@ -81,6 +84,7 @@ class ContractDetailView(APIView):
 
 
 class ContractAnalysisView(APIView):
+    permission_classes = [IsAuthenticated]
     def post(self, request, contract_id=None):
         if contract_id:
             try:
@@ -170,6 +174,7 @@ class ContractAnalysisView(APIView):
 
 
 class ContractAnalysisDetailView(APIView): 
+    permission_classes = [IsAuthenticated]
     def get(self, request, contract_id): 
         try: 
             obj_id = ObjectId(contract_id)
@@ -234,6 +239,7 @@ def analyze_contract(contract_text):
     }
 
 class ContractEvaluationView(APIView):
+    permission_classes = [IsAuthenticated]
     def post(self, request): 
         contract_text = request.data.get('text')
         if not contract_text: 
