@@ -200,7 +200,6 @@ class ContractAnalysisDetailView(APIView):
         }, status=status.HTTP_200_OK)
 
 
-# Shared helper function
 def analyze_contract(contract_text):
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -233,3 +232,59 @@ def analyze_contract(contract_text):
         "analysis": model_reply,
         "model_used": "DeepSeek Reasoning Model (Live)"
     }
+
+class ContractEvaluationView(APIView):
+    def post(self, request): 
+        contract_text = request.data.get('text')
+        if not contract_text: 
+            uploaded_file = request.FILES.get('file')
+            if not uploaded_file: 
+                return Response(
+                    {'error': "Missing 'text' field or uploaded 'file'"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if uploaded_file.name.endswith('.txt'): 
+                contract_text = uploaded_file.read().decode('utf-8')
+            else: 
+                return Response(
+                    {'error': 'Only .txt files are supported for now'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        try: 
+            headers = {
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "deepseek-reasoner", 
+                "messages": [
+                    {
+                        "role": "system", 
+                        "content": (
+                             "You are a legal AI responsible for evaluating the overall health of a contract. "
+                            "Given a full contract text, identify whether it meets standard legal expectations. "
+                            "Check for clarity, completeness of clauses, risk balance between parties, and enforceability. "
+                        "Then answer clearly if the contract should be APPROVED or NOT APPROVED, and explain your reasoning."
+                        )
+                    },
+                    {
+                        "role": "user", 
+                        "content": contract_text
+                    }
+                ]
+            }
+            response = requests.post("https://api.deepseek.com/v1/chat/completions", json=payload, headers=headers)
+            response.raise_for_status()
+            print(response.text)
+            result = response.json()
+            reply = result["choices"][0]["message"]["content"]
+            approved = "not approved" not in reply.lower()
+            return Response({
+                "approved": approved, 
+                "reasoning": reply.strip()
+            }, status=status.HTTP_200_OK)
+        except Exception as e: 
+            return Response(
+                {"error": f"ContractEvaluation failed: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )                
