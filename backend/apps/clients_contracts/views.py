@@ -11,9 +11,12 @@ from rest_framework.permissions import IsAuthenticated
 import time
 from functools import wraps
 from django.utils.decorators import method_decorator
+from rest_framework.pagination import PageNumberPagination
+from django.utils.deprecation import MiddlewareMixin
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 contracts_collection = db["contracts"] 
+logs_collection = db["logs"]
 
 request_count = 0
 cumulative_latency = 0.0
@@ -349,4 +352,51 @@ class MetricsView(APIView):
         return Response({
             "request_count": request_count,
             "average_latency": avg_latency
-        }, status=status.HTTP_200_OK)                
+        }, status=status.HTTP_200_OK)
+
+# Logging middleware
+class RequestLogMiddleware(MiddlewareMixin):
+    def process_response(self, request, response):
+        user = str(request.user) if hasattr(request, 'user') and request.user.is_authenticated else None
+        log_entry = {
+            "user": user,
+            "endpoint": request.path,
+            "method": request.method,
+            "date": datetime.now().isoformat(),
+            "status": response.status_code
+        }
+        logs_collection.insert_one(log_entry)
+        return response
+
+class LogsPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+class LogsView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        user = request.query_params.get('user')
+        endpoint = request.query_params.get('endpoint')
+        date = request.query_params.get('date')
+        status_code = request.query_params.get('status')
+        query = {}
+        if user:
+            query['user'] = user
+        if endpoint:
+            query['endpoint'] = endpoint
+        if date:
+            query['date'] = {'$regex': f'^{date}'}
+        if status_code:
+            try:
+                query['status'] = int(status_code)
+            except ValueError:
+                pass
+        logs_cursor = logs_collection.find(query).sort('date', -1)
+        logs_list = list(logs_cursor)
+        for log in logs_list:
+            if '_id' in log:
+                log['_id'] = str(log['_id'])
+        paginator = LogsPagination()
+        page = paginator.paginate_queryset(logs_list, request)
+        return paginator.get_paginated_response(page)                
