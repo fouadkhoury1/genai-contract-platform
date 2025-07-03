@@ -23,6 +23,7 @@ from apps.clients_contracts.views import (
     ContractAnalysisDetailView,
     ContractEvaluationView
 )
+from apps.authentication.views import RegisterView, LoginView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -33,4 +34,6 @@ urlpatterns = [
     path('genai/analyze-contract/', ContractAnalysisView.as_view(), name='genai-analyze-contract'),
     path('contracts/<str:contract_id>/init-genai/', ContractAnalysisView.as_view(), name='init-genai-analysis'),
     path('genai/evaluate-contract/', ContractEvaluationView.as_view(), name='genai-evaluate-contract'),
+    path('auth/register/', RegisterView.as_view(), name='auth-register'),
+    path('auth/login/', LoginView.as_view(), name='auth-login'),
 ]
