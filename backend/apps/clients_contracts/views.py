@@ -5,6 +5,10 @@ from config.mongo import db
 from datetime import datetime
 from bson import ObjectId 
 from bson.errors import InvalidId
+import os
+import requests
+
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 
 contracts_collection = db["contracts"] 
@@ -51,3 +55,67 @@ class ContractDetailView(APIView):
         if not contract:
             return Response(contract, status=status.HTTP_200_OK)
         return Response(contract, status=status.HTTP_200_OK)
+
+class ContractAnalysisView(APIView):
+    def post(self, request):      
+        # Extract contract text from request
+        contract_text = request.data.get("text")
+
+        if not contract_text:
+            uploaded_file = request.FILES.get("file")
+            if not uploaded_file:
+                return Response(
+                    {"error": "Missing 'text' field or uploaded 'file'"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if uploaded_file.name.endswith(".txt"):
+                contract_text = uploaded_file.read().decode("utf-8")
+            else:
+                return Response(
+                    {"error": "Only .txt files are supported for now"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        try:
+            # Send contract text to DeepSeek API
+            headers = {
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "deepseek-reasoner",  
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a legal AI agent specialized in contract analysis. "
+                            "Given a contract text, identify clauses, detect potential risks, summarize obligations, "
+                            "and evaluate legal soundness. Highlight anything unusual, missing, or inconsistent. "
+                            "Respond clearly and concisely, suitable for both legal and non-legal readers."
+                        )
+                    },
+                    { 
+                        "role": "user",
+                        "content": contract_text
+                    }
+                ]
+            }
+
+            response = requests.post("https://api.deepseek.com/v1/chat/completions", json=payload, headers=headers)
+            response.raise_for_status()
+            result = response.json()
+
+            # Extract the text response from the model
+            model_reply = result["choices"][0]["message"]["content"]
+
+            return Response({
+                "analysis": model_reply,
+                "model_used": "DeepSeek Reasoning Model (Live)"
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {"error": f"Analysis failed: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
