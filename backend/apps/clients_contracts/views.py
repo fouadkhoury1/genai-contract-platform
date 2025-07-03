@@ -21,7 +21,7 @@ class ContractListCreateView(APIView):
     def post(self, request): 
         data = request.data 
         
-        required_fields = ['title', 'client', 'signed']
+        required_fields = ['title', 'client', 'signed', 'text']
         missing_fields = [field for field in required_fields if field not in data]
         
         if missing_fields: 
@@ -39,7 +39,13 @@ class ContractListCreateView(APIView):
             return Response(
                   {"error": "Date must be in YYYY-MM-DD format."},
             status=status.HTTP_400_BAD_REQUEST               
-            )         
+            )  
+         
+        data ['created_at'] = datetime.now().isoformat()
+        data ['updated_at'] = datetime.now().isoformat()
+
+        try: 
+            analysis_result = 
         
         contracts_collection.insert_one(data)
         return Response({'message': 'Contract Created!'}, status=status.HTTP_201_CREATED)
@@ -119,3 +125,31 @@ class ContractAnalysisView(APIView):
                 {"error": f"Analysis failed: {str(e)}"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+
+class ContractAnalysisDetailView(APIView): 
+    def get(self, request, contract_id): 
+        try: 
+            obj_id = ObjectId(contract_id)
+        except InvalidId: 
+            return Response(
+                {'error': 'Invalid contract ID'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        contract = contracts_collection.find_one({"_id": obj_id}, {"_id": 0})
+        if not contract: 
+            return Response(
+                {'error': 'Contract not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if 'analysis' not in contract: 
+            return Response(
+                {'error': 'No analysis found for this contract'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        return Response({
+            'analysis': contract['analysis'], 
+            'model_used': contract.get('model_used', 'DeepSeek Reasoning Model (Live)'), 
+        }, status=status.HTTP_200_OK)
