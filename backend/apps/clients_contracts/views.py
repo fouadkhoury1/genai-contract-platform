@@ -81,7 +81,40 @@ class ContractDetailView(APIView):
 
 
 class ContractAnalysisView(APIView):
-    def post(self, request):      
+    def post(self, request, contract_id=None):
+        if contract_id:
+            try:
+                obj_id = ObjectId(contract_id)
+            except InvalidId:
+                return Response({"error": "Invalid Contract ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+            contract = contracts_collection.find_one({"_id": obj_id})
+            if not contract:
+                return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            if 'text' not in contract:
+                return Response({"error": "Contract does not contain analyzable text"}, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                analysis_result = analyze_contract(contract['text'])
+                update_fields = {
+                    "analysis": analysis_result['analysis'],
+                    "model_used": analysis_result['model_used'],
+                    "analysis_date": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                }
+                contracts_collection.update_one({"_id": obj_id}, {"$set": update_fields})
+
+                return Response({
+                    "message": "Contract re-analyzed successfully",
+                    "contract_id": contract_id,
+                    "analysis": analysis_result['analysis'],
+                    "model_used": analysis_result['model_used']
+                }, status=status.HTTP_200_OK)
+
+            except Exception as e:
+                return Response({"error": f"Re-analysis failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         contract_text = request.data.get("text")
 
         if not contract_text:

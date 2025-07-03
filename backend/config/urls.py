@@ -16,12 +16,20 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-from apps.clients_contracts.views import ContractListCreateView, ContractDetailView, ContractAnalysisView, ContractAnalysisDetailView
+from apps.clients_contracts.views import (
+    ContractListCreateView,
+    ContractDetailView,
+    ContractAnalysisView,
+    ContractAnalysisDetailView
+)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path('api/contracts/', ContractListCreateView.as_view(), name='contract-list-create'),
-    path('api/contracts/analyze/', ContractAnalysisView.as_view(), name='contract-analyze'),
     path('api/contracts/<str:contract_id>/', ContractDetailView.as_view(), name='contract-detail'),
     path('api/contracts/<str:contract_id>/analysis/', ContractAnalysisDetailView.as_view(), name='contract-analysis-detail'),
+
+    
+    path('genai/analyze-contract/', ContractAnalysisView.as_view(), name='genai-analyze-contract'),
+    path('contracts/<str:contract_id>/init-genai/', ContractAnalysisView.as_view(), name='init-genai-analysis'),
 ]
