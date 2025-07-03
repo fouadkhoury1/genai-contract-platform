@@ -21,12 +21,18 @@ from apps.clients_contracts.views import (
     ContractDetailView,
     ContractAnalysisView,
     ContractAnalysisDetailView,
-    ContractEvaluationView
+    ContractEvaluationView,
+    HealthzView,
+    ReadyzView,
+    MetricsView
 )
 from apps.authentication.views import RegisterView, LoginView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path('healthz/', HealthzView.as_view(), name='healthz'),
+    path('readyz/', ReadyzView.as_view(), name='readyz'),
+    path('metrics/', MetricsView.as_view(), name='metrics'),
     path('api/contracts/', ContractListCreateView.as_view(), name='contract-list-create'),
     path('api/contracts/<str:contract_id>/analysis/', ContractAnalysisDetailView.as_view(), name='contract-analysis-detail'),
     path('api/contracts/<str:contract_id>/', ContractDetailView.as_view(), name='contract-detail'),

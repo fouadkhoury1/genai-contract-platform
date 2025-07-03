@@ -8,13 +8,29 @@ from bson.errors import InvalidId
 import os
 import requests
 from rest_framework.permissions import IsAuthenticated
+import time
+from functools import wraps
+from django.utils.decorators import method_decorator
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 contracts_collection = db["contracts"] 
 
+request_count = 0
+cumulative_latency = 0.0
+
+def track_metrics_dispatch(self, request, *args, **kwargs):
+    global request_count, cumulative_latency
+    start = time.time()
+    response = super(self.__class__, self).dispatch(request, *args, **kwargs)
+    latency = time.time() - start
+    request_count += 1
+    cumulative_latency += latency
+    return response
 
 class ContractListCreateView(APIView):
     permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
     def get(self, request): 
         contracts = list(contracts_collection.find({}, {'_id': 0}))
         return Response(contracts)
@@ -67,8 +83,10 @@ class ContractListCreateView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
-class ContractDetailView(APIView): 
+class ContractDetailView(APIView):
     permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
     def get(self, request, contract_id): 
         try: 
             obj_id = ObjectId(contract_id)
@@ -85,6 +103,8 @@ class ContractDetailView(APIView):
 
 class ContractAnalysisView(APIView):
     permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
     def post(self, request, contract_id=None):
         if contract_id:
             try:
@@ -173,8 +193,10 @@ class ContractAnalysisView(APIView):
             )
 
 
-class ContractAnalysisDetailView(APIView): 
+class ContractAnalysisDetailView(APIView):
     permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
     def get(self, request, contract_id): 
         try: 
             obj_id = ObjectId(contract_id)
@@ -240,6 +262,8 @@ def analyze_contract(contract_text):
 
 class ContractEvaluationView(APIView):
     permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
     def post(self, request): 
         contract_text = request.data.get('text')
         if not contract_text: 
@@ -294,3 +318,35 @@ class ContractEvaluationView(APIView):
                 {"error": f"ContractEvaluation failed: {str(e)}"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )                
+
+class HealthzView(APIView):
+    permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
+    def get(self, request):
+        return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+class ReadyzView(APIView):
+    permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
+    def get(self, request):
+        try:
+            db_stats = contracts_collection.database.command("ping")
+            if db_stats.get("ok") == 1.0:
+                return Response({"status": "ready"}, status=status.HTTP_200_OK)
+            else:
+                return Response({"status": "not ready"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            return Response({"status": "not ready", "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class MetricsView(APIView):
+    permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
+    def get(self, request):
+        avg_latency = cumulative_latency / request_count if request_count > 0 else 0.0
+        return Response({
+            "request_count": request_count,
+            "average_latency": avg_latency
+        }, status=status.HTTP_200_OK)                
