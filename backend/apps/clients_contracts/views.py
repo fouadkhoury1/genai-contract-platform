@@ -7,6 +7,8 @@ from bson import ObjectId
 from bson.errors import InvalidId
 import os
 import requests
+import PyPDF2
+import io
 from rest_framework.permissions import IsAuthenticated
 import time
 from functools import wraps
@@ -67,7 +69,7 @@ class ContractListCreateView(APIView):
         data['updated_at'] = datetime.now().isoformat()
         
         try:
-            analysis_result = analyze_contract(data['text'])
+            analysis_result = ai_service.analyze_contract(data['text'])
             data['analysis'] = analysis_result['analysis']
             data['model_used'] = analysis_result['model_used']
             data['analysis_date'] = datetime.now().isoformat()
@@ -156,7 +158,7 @@ class ContractAnalysisView(APIView):
                 return Response({"error": "Contract does not contain analyzable text"}, status=status.HTTP_400_BAD_REQUEST)
 
             try:
-                analysis_result = analyze_contract(contract['text'])
+                analysis_result = ai_service.analyze_contract(contract['text'])
                 update_fields = {
                     "analysis": analysis_result['analysis'],
                     "model_used": analysis_result['model_used'],
@@ -185,11 +187,28 @@ class ContractAnalysisView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            if uploaded_file.name.endswith(".txt"):
+            if uploaded_file.name.endswith(".pdf"):
+                # Read PDF and extract text
+                try:
+                    pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
+                    contract_text = ""
+                    for page in pdf_reader.pages:
+                        contract_text += page.extract_text()
+                    if not contract_text.strip():
+                        return Response(
+                            {"error": "Could not extract text from PDF. The file might be empty or corrupted."}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except Exception as e:
+                    return Response(
+                        {"error": f"Error reading PDF file: {str(e)}"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            elif uploaded_file.name.endswith(".txt"):
                 contract_text = uploaded_file.read().decode("utf-8")
             else:
                 return Response(
-                    {"error": "Only .txt files are supported for now"}, 
+                    {"error": "Only .pdf and .txt files are supported"}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -201,7 +220,7 @@ class ContractAnalysisView(APIView):
         }
 
         try:
-            analysis_result = analyze_contract(contract_text)
+            analysis_result = ai_service.analyze_contract(contract_text)
             
             contract_data = {
                 **contract_metadata,
@@ -263,38 +282,9 @@ class ContractAnalysisDetailView(APIView):
         }, status=status.HTTP_200_OK)
 
 
-def analyze_contract(contract_text):
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "deepseek-reasoner",  
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a legal AI agent specialized in contract analysis. "
-                    "Given a contract text, identify clauses, detect potential risks, summarize obligations, "
-                    "and evaluate legal soundness. Highlight anything unusual, missing, or inconsistent. "
-                    "Respond clearly and concisely, suitable for both legal and non-legal readers."
-                )
-            },
-            { 
-                "role": "user",
-                "content": contract_text
-            }
-        ]
-    }
+from .ai_service import AIService
 
-    response = requests.post("https://api.deepseek.com/v1/chat/completions", json=payload, headers=headers)
-    response.raise_for_status()
-    result = response.json()
-    model_reply = result["choices"][0]["message"]["content"]
-    return {
-        "analysis": model_reply,
-        "model_used": "DeepSeek Reasoning Model (Live)"
-    }
+ai_service = AIService()
 
 class ContractEvaluationView(APIView):
     permission_classes = [IsAuthenticated]
@@ -309,49 +299,39 @@ class ContractEvaluationView(APIView):
                     {'error': "Missing 'text' field or uploaded 'file'"}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            if uploaded_file.name.endswith('.txt'): 
+            if uploaded_file.name.endswith('.pdf'):
+                # Read PDF and extract text
+                try:
+                    pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
+                    contract_text = ""
+                    for page in pdf_reader.pages:
+                        contract_text += page.extract_text()
+                    if not contract_text.strip():
+                        return Response(
+                            {"error": "Could not extract text from PDF. The file might be empty or corrupted."}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except Exception as e:
+                    return Response(
+                        {"error": f"Error reading PDF file: {str(e)}"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            elif uploaded_file.name.endswith('.txt'): 
                 contract_text = uploaded_file.read().decode('utf-8')
             else: 
                 return Response(
-                    {'error': 'Only .txt files are supported for now'}, 
+                    {'error': 'Only .pdf and .txt files are supported'}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
         try: 
-            headers = {
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": "deepseek-reasoner", 
-                "messages": [
-                    {
-                        "role": "system", 
-                        "content": (
-                             "You are a legal AI responsible for evaluating the overall health of a contract. "
-                            "Given a full contract text, identify whether it meets standard legal expectations. "
-                            "Check for clarity, completeness of clauses, risk balance between parties, and enforceability. "
-                        "Then answer clearly if the contract should be APPROVED or NOT APPROVED, and explain your reasoning."
-                        )
-                    },
-                    {
-                        "role": "user", 
-                        "content": contract_text
-                    }
-                ]
-            }
-            response = requests.post("https://api.deepseek.com/v1/chat/completions", json=payload, headers=headers)
-            response.raise_for_status()
-            print(response.text)
-            result = response.json()
-            reply = result["choices"][0]["message"]["content"]
-            approved = "not approved" not in reply.lower()
+            result = ai_service.evaluate_contract(contract_text)
             return Response({
-                "approved": approved, 
-                "reasoning": reply.strip()
+                "approved": result["approved"], 
+                "reasoning": result["reasoning"]
             }, status=status.HTTP_200_OK)
         except Exception as e: 
             return Response(
-                {"error": f"ContractEvaluation failed: {str(e)}"}, 
+                {"error": f"Contract evaluation failed: {str(e)}"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )                
 
