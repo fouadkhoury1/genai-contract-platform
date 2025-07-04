@@ -39,8 +39,7 @@ export default function RegisterPage() {
   const onSubmit = async (data: RegisterForm) => {
     setIsLoading(true);
     try {
-      const response = await authService.register({ username: data.username, password: data.password });
-      console.log('Registration response:', response);
+      await authService.register({username: data.username, password: data.password});
       toast.success('Registration successful!');
       router.push('/dashboard');
     } catch (error: any) {

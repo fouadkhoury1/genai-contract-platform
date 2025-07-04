@@ -39,7 +39,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "apps.clients_contracts",
     "rest_framework",
-    "django_extensions"
+    "django_extensions",
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
@@ -51,6 +52,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.clients_contracts.views.RequestLogMiddleware",
+    'corsheaders.middleware.CorsMiddleware',
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -135,3 +137,10 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
 }
+
+# CORS settings for local frontend development
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
+# For development only, you can use the following instead (uncomment if needed):
+# CORS_ALLOW_ALL_ORIGINS = True

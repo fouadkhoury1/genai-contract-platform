@@ -35,11 +35,18 @@ export const authService = {
   },
 
   getUser() {
+    if (typeof window === 'undefined') return null;
     const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
+    try {
+      return user ? JSON.parse(user) : null;
+    } catch {
+      localStorage.removeItem('user');
+      return null;
+    }
   },
 
   isAuthenticated(): boolean {
+    if (typeof window === 'undefined') return false;
     return !!this.getToken();
   },
 }; 

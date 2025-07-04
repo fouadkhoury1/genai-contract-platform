@@ -34,7 +34,7 @@ export default function LoginPage() {
     try {
       await authService.login(data);
       toast.success('Login successful!');
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Login failed');
     } finally {

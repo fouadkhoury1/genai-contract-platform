@@ -24,8 +24,11 @@ class LoginView(APIView):
         if user is not None:
             refresh = RefreshToken.for_user(user)
             return Response({
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
+                'token': str(refresh.access_token),
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                }
             }, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)  
