@@ -95,13 +95,45 @@ class ContractDetailView(APIView):
             obj_id = ObjectId(contract_id)
         except InvalidId: 
             return Response({"error": "Invalid Contract ID"}, status=status.HTTP_400_BAD_REQUEST)
-        
         contract = contracts_collection.find_one({"_id": obj_id})
         if not contract:
             return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
-        
         contract['_id'] = str(contract['_id'])  # Serialize ObjectId
         return Response(contract, status=status.HTTP_200_OK)
+
+    def put(self, request, contract_id):
+        try:
+            obj_id = ObjectId(contract_id)
+        except InvalidId:
+            return Response({"error": "Invalid Contract ID"}, status=status.HTTP_400_BAD_REQUEST)
+        data = request.data
+        data['updated_at'] = datetime.now().isoformat()
+        result = contracts_collection.update_one({"_id": obj_id}, {"$set": data})
+        if result.matched_count == 0:
+            return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"message": "Contract updated successfully"}, status=status.HTTP_200_OK)
+
+    def patch(self, request, contract_id):
+        try:
+            obj_id = ObjectId(contract_id)
+        except InvalidId:
+            return Response({"error": "Invalid Contract ID"}, status=status.HTTP_400_BAD_REQUEST)
+        data = request.data
+        data['updated_at'] = datetime.now().isoformat()
+        result = contracts_collection.update_one({"_id": obj_id}, {"$set": data})
+        if result.matched_count == 0:
+            return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"message": "Contract updated successfully"}, status=status.HTTP_200_OK)
+
+    def delete(self, request, contract_id):
+        try:
+            obj_id = ObjectId(contract_id)
+        except InvalidId:
+            return Response({"error": "Invalid Contract ID"}, status=status.HTTP_400_BAD_REQUEST)
+        result = contracts_collection.delete_one({"_id": obj_id})
+        if result.deleted_count == 0:
+            return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"message": "Contract deleted successfully"}, status=status.HTTP_200_OK)
 
 
 class ContractAnalysisView(APIView):
