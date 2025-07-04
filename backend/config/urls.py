@@ -44,8 +44,8 @@ urlpatterns = [
     path('genai/analyze-contract/', ContractAnalysisView.as_view(), name='genai-analyze-contract'),
     path('contracts/<str:contract_id>/init-genai/', ContractAnalysisView.as_view(), name='init-genai-analysis'),
     path('genai/evaluate-contract/', ContractEvaluationView.as_view(), name='genai-evaluate-contract'),
-    path('auth/register/', RegisterView.as_view(), name='auth-register'),
-    path('auth/login/', LoginView.as_view(), name='auth-login'),
+    path('api/auth/register/', RegisterView.as_view(), name='auth-register'),
+    path('api/auth/login/', LoginView.as_view(), name='auth-login'),
     path('clients/', ClientListCreateView.as_view(), name='client-list-create'),
     path('clients/<str:client_id>/contracts/', ClientContractsView.as_view(), name='client-contracts'),
 ]
