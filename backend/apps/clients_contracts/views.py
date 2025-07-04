@@ -17,6 +17,7 @@ from django.utils.deprecation import MiddlewareMixin
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 contracts_collection = db["contracts"] 
 logs_collection = db["logs"]
+clients_collection = db["clients"]
 
 request_count = 0
 cumulative_latency = 0.0
@@ -431,4 +432,46 @@ class LogsView(APIView):
                 log['_id'] = str(log['_id'])
         paginator = LogsPagination()
         page = paginator.paginate_queryset(logs_list, request)
-        return paginator.get_paginated_response(page)                
+        return paginator.get_paginated_response(page)
+
+class ClientListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
+    def post(self, request):
+        data = request.data
+        required_fields = ['name']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return Response({"error": f"Missing fields: {', '.join(missing_fields)}"}, status=status.HTTP_400_BAD_REQUEST)
+        # Ensure unique name
+        if clients_collection.find_one({"name": data['name']}):
+            return Response({"error": "Client name must be unique."}, status=status.HTTP_400_BAD_REQUEST)
+        client_doc = {
+            "name": data["name"],
+            "email": data.get("email"),
+            "company_id": data.get("company_id"),
+            "created_at": datetime.now().isoformat()
+        }
+        result = clients_collection.insert_one(client_doc)
+        client_doc["_id"] = str(result.inserted_id)
+        return Response(client_doc, status=status.HTTP_201_CREATED)
+
+class ClientContractsView(APIView):
+    permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
+    def get(self, request, client_id):
+        # Find client by id
+        try:
+            obj_id = ObjectId(client_id)
+        except InvalidId:
+            return Response({"error": "Invalid Client ID"}, status=status.HTTP_400_BAD_REQUEST)
+        client = clients_collection.find_one({"_id": obj_id})
+        if not client:
+            return Response({"error": "Client not found"}, status=status.HTTP_404_NOT_FOUND)
+        # Find contracts for this client (by name)
+        contracts = list(contracts_collection.find({"client": client["name"]}))
+        for contract in contracts:
+            contract["_id"] = str(contract["_id"])
+        return Response(contracts, status=status.HTTP_200_OK)                
