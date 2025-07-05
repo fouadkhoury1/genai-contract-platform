@@ -15,6 +15,9 @@ from functools import wraps
 from django.utils.decorators import method_decorator
 from rest_framework.pagination import PageNumberPagination
 from django.utils.deprecation import MiddlewareMixin
+from .ai_service import AIService
+
+ai_service = AIService()
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 contracts_collection = db["contracts"] 
@@ -38,54 +41,119 @@ class ContractListCreateView(APIView):
     def dispatch(self, request, *args, **kwargs):
         return track_metrics_dispatch(self, request, *args, **kwargs)
     def get(self, request): 
-        contracts = list(contracts_collection.find({}, {'_id': 0}))
+        contracts = list(contracts_collection.find({}))
+        # Convert ObjectId to string for JSON serialization
+        for contract in contracts:
+            contract['_id'] = str(contract['_id'])
         return Response(contracts)
     
     def post(self, request): 
-        data = request.data 
+        data = request.data.copy()  # Make a mutable copy
+        contract_text = data.get('text')
+        # If 'text' is missing, try to extract from uploaded file
+        if not contract_text:
+            uploaded_file = request.FILES.get('file')
+            if not uploaded_file:
+                required_fields = ['title', 'client', 'signed', 'text']
+                missing_fields = [field for field in required_fields if field not in data]
+                return Response(
+                    {"error": f"Missing fields: {', '.join(missing_fields)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if uploaded_file.name.endswith('.pdf'):
+                try:
+                    pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
+                    contract_text = ""
+                    for page in pdf_reader.pages:
+                        contract_text += page.extract_text()
+                    if not contract_text.strip():
+                        return Response(
+                            {"error": "Could not extract text from PDF. The file might be empty or corrupted."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except Exception as e:
+                    return Response(
+                        {"error": f"Error reading PDF file: {str(e)}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            elif uploaded_file.name.endswith('.txt'):
+                contract_text = uploaded_file.read().decode('utf-8')
+            else:
+                return Response(
+                    {"error": "Only .pdf and .txt files are supported"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            data['text'] = contract_text
+        # Convert signed field to boolean if it's a string
+        if 'signed' in data and isinstance(data['signed'], str):
+            data['signed'] = data['signed'].lower() == 'true'
         
+        # Now proceed as before
         required_fields = ['title', 'client', 'signed', 'text']
         missing_fields = [field for field in required_fields if field not in data]
-        
-        if missing_fields: 
+        if missing_fields:
             return Response(
-                 {"error": f"Missing fields: {', '.join(missing_fields)}"},
-                 status=status.HTTP_400_BAD_REQUEST       
+                {"error": f"Missing fields: {', '.join(missing_fields)}"},
+                status=status.HTTP_400_BAD_REQUEST
             )
-        
         if 'date' not in data:
             data['date'] = datetime.now().strftime('%Y-%m-%d')
-            
-        try: 
+        try:
             datetime.strptime(data['date'], '%Y-%m-%d')
-        except ValueError: 
+        except ValueError:
             return Response(
                 {"error": "Date must be in YYYY-MM-DD format."},
-                status=status.HTTP_400_BAD_REQUEST               
-            )         
-        
+                status=status.HTTP_400_BAD_REQUEST
+            )
         # Add timestamps
         data['created_at'] = datetime.now().isoformat()
         data['updated_at'] = datetime.now().isoformat()
-        
         try:
             analysis_result = ai_service.analyze_contract(data['text'])
             data['analysis'] = analysis_result['analysis']
             data['model_used'] = analysis_result['model_used']
             data['analysis_date'] = datetime.now().isoformat()
+            # Evaluate contract approval
+            evaluation_result = ai_service.evaluate_contract(data['text'])
+            data['approved'] = evaluation_result['approved']
+            data['evaluation_reasoning'] = evaluation_result['reasoning']
         except Exception as e:
             return Response(
-                {"error": f"Contract analysis failed: {str(e)}"}, 
+                {"error": f"Contract analysis or evaluation failed: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        # Remove the file object before saving to MongoDB (it can't be serialized)
+        if 'file' in data:
+            del data['file']
         
-        result = contracts_collection.insert_one(data)
+        # Ensure _id is not present (MongoDB will generate it)
+        if '_id' in data:
+            del data['_id']
+            
+        # Create a clean document structure to avoid any MongoDB issues
+        contract_document = {
+            'title': data['title'],
+            'client': data['client'],
+            'signed': data['signed'],
+            'text': data['text'],
+            'date': data['date'],
+            'created_at': data['created_at'],
+            'updated_at': data['updated_at'],
+            'analysis': data['analysis'],
+            'model_used': data['model_used'],
+            'analysis_date': data['analysis_date'],
+            'approved': data['approved'],
+            'evaluation_reasoning': data['evaluation_reasoning']
+        }
+        
+        result = contracts_collection.insert_one(contract_document)
         data['_id'] = str(result.inserted_id)
-        
         return Response({
             'message': 'Contract Created and Analyzed!',
             'contract_id': str(result.inserted_id),
-            'analysis': data['analysis']
+            'analysis': data['analysis'],
+            'approved': data['approved'],
+            'evaluation_reasoning': data['evaluation_reasoning']
         }, status=status.HTTP_201_CREATED)
 
 
@@ -102,6 +170,11 @@ class ContractDetailView(APIView):
         if not contract:
             return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
         contract['_id'] = str(contract['_id'])  # Serialize ObjectId
+        # Ensure approved and evaluation_reasoning are present in the response
+        if 'approved' not in contract:
+            contract['approved'] = None
+        if 'evaluation_reasoning' not in contract:
+            contract['evaluation_reasoning'] = None
         return Response(contract, status=status.HTTP_200_OK)
 
     def put(self, request, contract_id):
@@ -114,7 +187,14 @@ class ContractDetailView(APIView):
         result = contracts_collection.update_one({"_id": obj_id}, {"$set": data})
         if result.matched_count == 0:
             return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
-        return Response({"message": "Contract updated successfully"}, status=status.HTTP_200_OK)
+        # Return updated contract with approved/evaluation_reasoning if present
+        contract = contracts_collection.find_one({"_id": obj_id})
+        contract['_id'] = str(contract['_id'])
+        if 'approved' not in contract:
+            contract['approved'] = None
+        if 'evaluation_reasoning' not in contract:
+            contract['evaluation_reasoning'] = None
+        return Response(contract, status=status.HTTP_200_OK)
 
     def patch(self, request, contract_id):
         try:
@@ -126,7 +206,14 @@ class ContractDetailView(APIView):
         result = contracts_collection.update_one({"_id": obj_id}, {"$set": data})
         if result.matched_count == 0:
             return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
-        return Response({"message": "Contract updated successfully"}, status=status.HTTP_200_OK)
+        # Return updated contract with approved/evaluation_reasoning if present
+        contract = contracts_collection.find_one({"_id": obj_id})
+        contract['_id'] = str(contract['_id'])
+        if 'approved' not in contract:
+            contract['approved'] = None
+        if 'evaluation_reasoning' not in contract:
+            contract['evaluation_reasoning'] = None
+        return Response(contract, status=status.HTTP_200_OK)
 
     def delete(self, request, contract_id):
         try:
@@ -159,11 +246,15 @@ class ContractAnalysisView(APIView):
 
             try:
                 analysis_result = ai_service.analyze_contract(contract['text'])
+                # Evaluate contract approval
+                evaluation_result = ai_service.evaluate_contract(contract['text'])
                 update_fields = {
                     "analysis": analysis_result['analysis'],
                     "model_used": analysis_result['model_used'],
                     "analysis_date": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": datetime.now().isoformat(),
+                    "approved": evaluation_result['approved'],
+                    "evaluation_reasoning": evaluation_result['reasoning']
                 }
                 contracts_collection.update_one({"_id": obj_id}, {"$set": update_fields})
 
@@ -171,7 +262,9 @@ class ContractAnalysisView(APIView):
                     "message": "Contract re-analyzed successfully",
                     "contract_id": contract_id,
                     "analysis": analysis_result['analysis'],
-                    "model_used": analysis_result['model_used']
+                    "model_used": analysis_result['model_used'],
+                    "approved": evaluation_result['approved'],
+                    "evaluation_reasoning": evaluation_result['reasoning']
                 }, status=status.HTTP_200_OK)
 
             except Exception as e:
@@ -231,13 +324,20 @@ class ContractAnalysisView(APIView):
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
-            
+
+            # Evaluate contract approval
+            evaluation_result = ai_service.evaluate_contract(contract_text)
+            contract_data['approved'] = evaluation_result['approved']
+            contract_data['evaluation_reasoning'] = evaluation_result['reasoning']
+
             result = contracts_collection.insert_one(contract_data)
             
             return Response({
                 "contract_id": str(result.inserted_id),
                 "analysis": analysis_result['analysis'],
                 "model_used": analysis_result['model_used'],
+                "approved": evaluation_result['approved'],
+                "evaluation_reasoning": evaluation_result['reasoning'],
                 "message": "Contract analyzed and saved successfully"
             }, status=status.HTTP_201_CREATED)
             
@@ -281,10 +381,6 @@ class ContractAnalysisDetailView(APIView):
             'contract_client': contract.get('client')
         }, status=status.HTTP_200_OK)
 
-
-from .ai_service import AIService
-
-ai_service = AIService()
 
 class ContractEvaluationView(APIView):
     permission_classes = [IsAuthenticated]

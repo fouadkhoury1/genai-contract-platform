@@ -29,6 +29,8 @@ export interface Contract {
   analysis_date?: string;
   created_at: string;
   updated_at: string;
+  approved?: boolean;
+  evaluation_reasoning?: string;
 }
 
 export interface ContractAnalysis {

@@ -15,7 +15,7 @@ export const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
-    if (token) {
+    if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -45,7 +45,7 @@ export const endpoints = {
   
   // Contract endpoints
   contracts: '/api/contracts/',
-  contractAnalysis: (id: string) => `/api/contracts/${id}/analyze/`,
+  contractAnalysis: (id: string) => `/api/contracts/${id}/analysis/`,
   contractEvaluation: '/api/contracts/evaluate/',
   
   // Client endpoints
