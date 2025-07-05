@@ -35,7 +35,7 @@ export default function DashboardPage() {
       <div className="w-full min-h-screen overflow-hidden flex flex-col justify-start items-start" style={{ background: '#121417' }}>
         <div className="w-full flex flex-col justify-start items-start">
           {/* Header */}
-          <div className="w-full px-10 py-3 border-b flex justify-between items-center" style={{ borderColor: '#E5E8EB' }}>
+          <div className="w-full px-10 py-3 border-b border-white/10 flex justify-between items-center">
             <div className="flex justify-start items-center gap-4">
               <div className="flex flex-col justify-start items-start">
                 <div className="w-4 flex-1 relative overflow-hidden">

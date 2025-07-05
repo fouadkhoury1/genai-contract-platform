@@ -43,81 +43,90 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-950 flex items-center justify-center p-4 transition-colors duration-300">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#121417', fontFamily: 'Inter' }}>
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Welcome Back</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-300">Sign in to your account</p>
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <div className="w-4 h-4 bg-white"></div>
+            <h1 className="text-lg font-bold text-white" style={{ fontFamily: 'Inter' }}>
+              GenAI Platform
+            </h1>
+          </div>
+          <h2 className="text-3xl font-bold text-white" style={{ fontFamily: 'Inter' }}>Welcome Back</h2>
+          <p className="mt-2 text-sm" style={{ color: '#9CABBA', fontFamily: 'Inter' }}>Sign in to your account</p>
         </div>
 
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-8 border border-gray-100 dark:border-gray-800 transition-colors duration-300">
+        <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+              <label htmlFor="username" className="block text-sm font-medium text-white mb-2" style={{ fontFamily: 'Inter' }}>
                 Username
               </label>
-              <div className="mt-1 relative">
+              <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <User className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                  <User className="h-5 w-5" style={{ color: '#9CABBA' }} />
                 </div>
                 <input
                   {...register('username')}
                   type="text"
                   id="username"
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-700 rounded-xl placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all duration-200 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
+                  className="appearance-none block w-full pl-10 pr-3 py-3 border border-white/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/30 sm:text-sm transition-all duration-200 text-white bg-white/5 backdrop-blur-sm"
+                  style={{ fontFamily: 'Inter', backgroundColor: '#293038' }}
                   placeholder="Enter your username"
                 />
               </div>
               {errors.username && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.username.message}</p>
+                <p className="mt-1 text-sm text-red-400" style={{ fontFamily: 'Inter' }}>{errors.username.message}</p>
               )}
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+              <label htmlFor="password" className="block text-sm font-medium text-white mb-2" style={{ fontFamily: 'Inter' }}>
                 Password
               </label>
-              <div className="mt-1 relative">
+              <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                  <Lock className="h-5 w-5" style={{ color: '#9CABBA' }} />
                 </div>
                 <input
                   {...register('password')}
                   type={showPassword ? 'text' : 'password'}
                   id="password"
-                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-700 rounded-xl placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all duration-200 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
+                  className="appearance-none block w-full pl-10 pr-10 py-3 border border-white/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/30 sm:text-sm transition-all duration-200 text-white bg-white/5 backdrop-blur-sm"
+                  style={{ fontFamily: 'Inter', backgroundColor: '#293038' }}
                   placeholder="Enter your password"
                 />
                 <button
                   type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-200"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center hover:text-white/80 transition-colors duration-200"
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? (
-                    <EyeOff className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                    <EyeOff className="h-5 w-5" style={{ color: '#9CABBA' }} />
                   ) : (
-                    <Eye className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                    <Eye className="h-5 w-5" style={{ color: '#9CABBA' }} />
                   )}
                 </button>
               </div>
               {errors.password && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.password.message}</p>
+                <p className="mt-1 text-sm text-red-400" style={{ fontFamily: 'Inter' }}>{errors.password.message}</p>
               )}
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-xl text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 hover:bg-white/10"
+              style={{ fontFamily: 'Inter', backgroundColor: '#293038' }}
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600 dark:text-gray-300">
+            <p className="text-sm" style={{ color: '#9CABBA', fontFamily: 'Inter' }}>
               Don't have an account?{' '}
-              <a href="/register" className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">
+              <a href="/register" className="font-medium text-white hover:text-white/80 transition-colors duration-200" style={{ fontFamily: 'Inter' }}>
                 Sign up
               </a>
             </p>
