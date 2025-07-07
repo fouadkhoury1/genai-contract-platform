@@ -655,4 +655,97 @@ class ClientContractsView(APIView):
         contracts = list(contracts_collection.find({"client": client["name"]}))
         for contract in contracts:
             contract["_id"] = str(contract["_id"])
-        return Response(contracts, status=status.HTTP_200_OK)                
+        return Response(contracts, status=status.HTTP_200_OK)
+
+class ContractReanalyzeView(APIView):
+    permission_classes = [IsAuthenticated]
+    def dispatch(self, request, *args, **kwargs):
+        return track_metrics_dispatch(self, request, *args, **kwargs)
+    
+    def post(self, request, contract_id=None):
+        """Reanalyze an existing contract with a new file."""
+        try:
+            obj_id = ObjectId(contract_id)
+        except InvalidId:
+            return Response({"error": "Invalid Contract ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get existing contract
+        contract = contracts_collection.find_one({"_id": obj_id})
+        if not contract:
+            return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Get file from request
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response(
+                {"error": "No file provided"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Extract text from file
+        if uploaded_file.name.endswith('.pdf'):
+            try:
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
+                contract_text = ""
+                for page in pdf_reader.pages:
+                    contract_text += page.extract_text()
+                if not contract_text.strip():
+                    return Response(
+                        {"error": "Could not extract text from PDF. The file might be empty or corrupted."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except Exception as e:
+                return Response(
+                    {"error": f"Error reading PDF file: {str(e)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        elif uploaded_file.name.endswith('.txt'):
+            contract_text = uploaded_file.read().decode('utf-8')
+        else:
+            return Response(
+                {"error": "Only .pdf and .txt files are supported"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Analyze the new text
+            analysis_result = ai_service.analyze_contract(contract_text)
+            evaluation_result = ai_service.evaluate_contract(contract_text)
+
+            # Update contract with new analysis
+            update_data = {
+                'text': contract_text,
+                'analysis': analysis_result['analysis'],
+                'model_used': analysis_result['model_used'],
+                'analysis_date': datetime.now().isoformat(),
+                'approved': evaluation_result['approved'],
+                'evaluation_reasoning': evaluation_result['reasoning'],
+                'updated_at': datetime.now().isoformat()
+            }
+
+            # Update title if provided
+            if 'title' in request.data:
+                update_data['title'] = request.data['title']
+
+            # Update the contract
+            result = contracts_collection.update_one(
+                {"_id": obj_id},
+                {"$set": update_data}
+            )
+
+            if result.matched_count == 0:
+                return Response({"error": "Contract not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            return Response({
+                'message': 'Contract reanalyzed successfully',
+                'analysis': analysis_result['analysis'],
+                'model_used': analysis_result['model_used'],
+                'approved': evaluation_result['approved'],
+                'evaluation_reasoning': evaluation_result['reasoning']
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Error reanalyzing contract: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )                

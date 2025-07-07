@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from apps.authentication.views import LoginView, RegisterView
 from apps.clients_contracts.views import (
     ContractListCreateView,
     ContractDetailView,
@@ -23,6 +24,7 @@ from apps.clients_contracts.views import (
     ContractAnalysisDetailView,
     ContractEvaluationView,
     ContractClauseExtractionView,
+    ContractReanalyzeView,
     HealthzView,
     ReadyzView,
     MetricsView,
@@ -31,24 +33,23 @@ from apps.clients_contracts.views import (
     ClientDetailView,
     ClientContractsView
 )
-from apps.authentication.views import RegisterView, LoginView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path('healthz/', HealthzView.as_view(), name='healthz'),
-    path('readyz/', ReadyzView.as_view(), name='readyz'),
+    path('healthz/', HealthzView.as_view(), name='health'),
+    path('readyz/', ReadyzView.as_view(), name='ready'),
     path('metrics/', MetricsView.as_view(), name='metrics'),
     path('logs/', LogsView.as_view(), name='logs'),
-    path('api/contracts/', ContractListCreateView.as_view(), name='contract-list-create'),
-    path('api/contracts/<str:contract_id>/analysis/', ContractAnalysisDetailView.as_view(), name='contract-analysis-detail'),
+    path('api/auth/login/', LoginView.as_view(), name='login'),
+    path('api/auth/register/', RegisterView.as_view(), name='register'),
+    path('api/contracts/', ContractListCreateView.as_view(), name='contracts'),
     path('api/contracts/<str:contract_id>/', ContractDetailView.as_view(), name='contract-detail'),
-  
-    path('genai/analyze-contract/<str:contract_id>/', ContractClauseExtractionView.as_view(), name='genai-analyze-contract'),
-    path('contracts/<str:contract_id>/init-genai/', ContractAnalysisView.as_view(), name='init-genai-analysis'),
-    path('genai/evaluate-contract/', ContractEvaluationView.as_view(), name='genai-evaluate-contract'),
-    path('api/auth/register/', RegisterView.as_view(), name='auth-register'),
-    path('api/auth/login/', LoginView.as_view(), name='auth-login'),
-    path('api/clients/', ClientListCreateView.as_view(), name='client-list-create'),
+    path('api/contracts/<str:contract_id>/analysis/', ContractAnalysisDetailView.as_view(), name='contract-analysis-detail'),
+    path('api/contracts/<str:contract_id>/reanalyze/', ContractReanalyzeView.as_view(), name='contract-reanalyze'),
+    path('api/contracts/<str:contract_id>/clauses/', ContractClauseExtractionView.as_view(), name='contract-clauses'),
+    path('api/contracts/analyze/', ContractAnalysisView.as_view(), name='contract-analysis'),
+    path('api/contracts/evaluate/', ContractEvaluationView.as_view(), name='contract-evaluation'),
+    path('api/clients/', ClientListCreateView.as_view(), name='clients'),
     path('api/clients/<str:client_id>/', ClientDetailView.as_view(), name='client-detail'),
     path('api/clients/<str:client_id>/contracts/', ClientContractsView.as_view(), name='client-contracts'),
 ]

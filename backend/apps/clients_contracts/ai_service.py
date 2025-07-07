@@ -55,54 +55,122 @@ class AIService:
     @staticmethod
     def analyze_contract(contract_text: str) -> dict:
         """Analyze contract text and extract clauses, risks, and obligations."""
+        def chunk_text(text, chunk_size=20000):
+            return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+
         headers = {
             "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
             "Content-Type": "application/json"
         }
-        payload = {
-            "model": DEEPSEEK_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a legal AI agent specialized in contract analysis. "
-                        "Given a contract text, identify clauses, detect potential risks, summarize obligations, "
-                        "and evaluate legal soundness. Highlight anything unusual, missing, or inconsistent. "
-                        "Respond clearly and concisely, suitable for both legal and non-legal readers."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": contract_text
-                }
-            ]
-        }
 
-        try:
-            response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=60)
-            
-            response.raise_for_status()
-            result = response.json()
-            model_reply = result["choices"][0]["message"]["content"]
+        if len(contract_text) > 50000:
+            chunks = chunk_text(contract_text, 20000)
+            all_analyses = []
+            errors = []
+
+            def process_chunk(idx_chunk):
+                idx, chunk = idx_chunk
+                payload = {
+                    "model": DEEPSEEK_MODEL,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a legal AI agent specialized in contract analysis. "
+                                "Given a contract text, identify clauses, detect potential risks, summarize obligations, "
+                                "and evaluate legal soundness. Highlight anything unusual, missing, or inconsistent. "
+                                "Respond clearly and concisely, suitable for both legal and non-legal readers. "
+                                "Note: This is part of a larger contract, focus on analyzing this section."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": chunk
+                        }
+                    ]
+                }
+
+                try:
+                    response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=60)
+                    response.raise_for_status()
+                    result = response.json()
+                    return (result["choices"][0]["message"]["content"], None)
+                except requests.exceptions.Timeout:
+                    return (None, f"Chunk {idx+1}: Request timed out")
+                except requests.exceptions.ConnectionError:
+                    return (None, f"Chunk {idx+1}: Connection error")
+                except Exception as e:
+                    return (None, f"Chunk {idx+1}: {str(e)}")
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                results = list(executor.map(process_chunk, enumerate(chunks)))
+
+            for analysis, error in results:
+                if analysis:
+                    all_analyses.append(analysis)
+                if error:
+                    errors.append(error)
+
+            if not all_analyses:
+                return {
+                    "analysis": "Contract analysis failed: No successful chunk analyses.",
+                    "model_used": "Fallback Response"
+                }
+
+            # Combine all analyses
+            combined_analysis = "\n\n".join([
+                f"Section {i+1} Analysis:\n{analysis}"
+                for i, analysis in enumerate(all_analyses)
+            ])
+
             return {
-                "analysis": model_reply,
-                "model_used": "DeepSeek Reasoning Model (Live)"
+                "analysis": combined_analysis,
+                "model_used": "DeepSeek Reasoning Model (Live) - Chunked Analysis"
             }
-        except requests.exceptions.Timeout:
-            return {
-                "analysis": "Contract analysis temporarily unavailable due to network timeout. Please try again later.",
-                "model_used": "Fallback Response"
+        else:
+            payload = {
+                "model": DEEPSEEK_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a legal AI agent specialized in contract analysis. "
+                            "Given a contract text, identify clauses, detect potential risks, summarize obligations, "
+                            "and evaluate legal soundness. Highlight anything unusual, missing, or inconsistent. "
+                            "Respond clearly and concisely, suitable for both legal and non-legal readers."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": contract_text
+                    }
+                ]
             }
-        except requests.exceptions.ConnectionError as e:
-            return {
-                "analysis": "Contract analysis temporarily unavailable due to connection issues. Please try again later.",
-                "model_used": "Fallback Response"
-            }
-        except Exception as e:
-            return {
-                "analysis": f"Contract analysis failed: {str(e)}. Please try again later.",
-                "model_used": "Fallback Response"
-            }
+
+            try:
+                response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=60)
+                response.raise_for_status()
+                result = response.json()
+                model_reply = result["choices"][0]["message"]["content"]
+                return {
+                    "analysis": model_reply,
+                    "model_used": "DeepSeek Reasoning Model (Live)"
+                }
+            except requests.exceptions.Timeout:
+                return {
+                    "analysis": "Contract analysis temporarily unavailable due to network timeout. Please try again later.",
+                    "model_used": "Fallback Response"
+                }
+            except requests.exceptions.ConnectionError as e:
+                return {
+                    "analysis": "Contract analysis temporarily unavailable due to connection issues. Please try again later.",
+                    "model_used": "Fallback Response"
+                }
+            except Exception as e:
+                return {
+                    "analysis": f"Contract analysis failed: {str(e)}. Please try again later.",
+                    "model_used": "Fallback Response"
+                }
 
     @staticmethod
     def extract_clauses(contract_text: str) -> dict:
@@ -301,51 +369,131 @@ class AIService:
     @staticmethod
     def evaluate_contract(contract_text: str) -> dict:
         """Evaluate contract health and return approval status with reasoning."""
+        def chunk_text(text, chunk_size=20000):
+            return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+
         headers = {
             "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
             "Content-Type": "application/json"
         }
-        payload = {
-            "model": DEEPSEEK_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a legal AI responsible for evaluating the overall health of a contract. "
-                        "Given a full contract text, identify whether it meets standard legal expectations. "
-                        "Check for clarity, completeness of clauses, risk balance between parties, and enforceability. "
-                        "Then answer clearly if the contract should be APPROVED or NOT APPROVED, and explain your reasoning."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": contract_text
-                }
-            ]
-        }
 
-        try:
-            response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=60)
-            response.raise_for_status()
-            result = response.json()
-            reply = result["choices"][0]["message"]["content"]
-            approved = "not approved" not in reply.lower()
+        if len(contract_text) > 50000:
+            chunks = chunk_text(contract_text, 20000)
+            all_evaluations = []
+            errors = []
+
+            def process_chunk(idx_chunk):
+                idx, chunk = idx_chunk
+                payload = {
+                    "model": DEEPSEEK_MODEL,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a legal AI responsible for evaluating the overall health of a contract. "
+                                "Given a contract text section, identify whether it meets standard legal expectations. "
+                                "Check for clarity, completeness of clauses, risk balance between parties, and enforceability. "
+                                "Note: This is part of a larger contract, focus on evaluating this section. "
+                                "Identify any issues that would make this section NOT APPROVED."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": chunk
+                        }
+                    ]
+                }
+
+                try:
+                    response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=60)
+                    response.raise_for_status()
+                    result = response.json()
+                    reply = result["choices"][0]["message"]["content"]
+                    approved = "not approved" not in reply.lower()
+                    return ({
+                        "approved": approved,
+                        "reasoning": reply.strip()
+                    }, None)
+                except requests.exceptions.Timeout:
+                    return (None, f"Chunk {idx+1}: Request timed out")
+                except requests.exceptions.ConnectionError:
+                    return (None, f"Chunk {idx+1}: Connection error")
+                except Exception as e:
+                    return (None, f"Chunk {idx+1}: {str(e)}")
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                results = list(executor.map(process_chunk, enumerate(chunks)))
+
+            for evaluation, error in results:
+                if evaluation:
+                    all_evaluations.append(evaluation)
+                if error:
+                    errors.append(error)
+
+            if not all_evaluations:
+                return {
+                    "approved": False,
+                    "reasoning": "Contract evaluation failed: No successful chunk evaluations."
+                }
+
+            # If any section is not approved, the whole contract is not approved
+            approved = all(eval["approved"] for eval in all_evaluations)
+            
+            # Combine all evaluations
+            combined_reasoning = "\n\n".join([
+                f"Section {i+1} Evaluation:\n{eval['reasoning']}"
+                for i, eval in enumerate(all_evaluations)
+            ])
+
+            if errors:
+                combined_reasoning += f"\n\nWarning: Some sections had errors: {'; '.join(errors)}"
+
             return {
                 "approved": approved,
-                "reasoning": reply.strip()
+                "reasoning": combined_reasoning
             }
-        except requests.exceptions.Timeout:
-            return {
-                "approved": False,
-                "reasoning": "Contract evaluation temporarily unavailable due to network timeout. Please try again later."
+        else:
+            payload = {
+                "model": DEEPSEEK_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a legal AI responsible for evaluating the overall health of a contract. "
+                            "Given a full contract text, identify whether it meets standard legal expectations. "
+                            "Check for clarity, completeness of clauses, risk balance between parties, and enforceability. "
+                            "Then answer clearly if the contract should be APPROVED or NOT APPROVED, and explain your reasoning."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": contract_text
+                    }
+                ]
             }
-        except requests.exceptions.ConnectionError as e:
-            return {
-                "approved": False,
-                "reasoning": "Contract evaluation temporarily unavailable due to connection issues. Please try again later."
-            }
-        except Exception as e:
-            return {
-                "approved": False,
-                "reasoning": f"Contract evaluation failed: {str(e)}. Please try again later."
-            } 
+
+            try:
+                response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=60)
+                response.raise_for_status()
+                result = response.json()
+                reply = result["choices"][0]["message"]["content"]
+                approved = "not approved" not in reply.lower()
+                return {
+                    "approved": approved,
+                    "reasoning": reply.strip()
+                }
+            except requests.exceptions.Timeout:
+                return {
+                    "approved": False,
+                    "reasoning": "Contract evaluation temporarily unavailable due to network timeout. Please try again later."
+                }
+            except requests.exceptions.ConnectionError as e:
+                return {
+                    "approved": False,
+                    "reasoning": "Contract evaluation temporarily unavailable due to connection issues. Please try again later."
+                }
+            except Exception as e:
+                return {
+                    "approved": False,
+                    "reasoning": f"Contract evaluation failed: {str(e)}. Please try again later."
+                } 

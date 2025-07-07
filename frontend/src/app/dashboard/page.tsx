@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/services/auth';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Activity } from 'lucide-react';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -48,18 +48,22 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-            <div className="flex-1 flex justify-end items-start gap-8">
-              <div className="w-21 h-10 max-w-120 min-w-21 px-4 overflow-hidden rounded-full flex justify-center items-center" style={{ background: '#293038' }}>
-                <div className="overflow-hidden flex flex-col justify-start items-center">
-                  <button
-                    onClick={() => authService.logout()}
-                    className="text-center text-white text-sm font-bold leading-5"
-                    style={{ fontFamily: 'Inter' }}
-                  >
-                    Logout
-                  </button>
-                </div>
-              </div>
+            <div className="flex-1 flex justify-end items-start gap-4">
+              <button
+                onClick={() => router.push('/system')}
+                className="h-10 px-4 flex items-center gap-2 rounded-full"
+                style={{ background: '#293038' }}
+              >
+                <Activity className="w-4 h-4 text-white" />
+                <span className="text-white text-sm font-bold leading-5">System Status</span>
+              </button>
+              <button
+                onClick={() => authService.logout()}
+                className="h-10 px-4 rounded-full text-white text-sm font-bold leading-5"
+                style={{ background: '#293038' }}
+              >
+                Logout
+              </button>
               <div className="w-10 h-10 relative rounded-full overflow-hidden">
                 <div className="w-10 h-10 bg-orange-400 rounded-full flex items-center justify-center text-sm font-semibold text-white">
                   {user.username.charAt(0).toUpperCase()}
@@ -92,8 +96,8 @@ export default function DashboardPage() {
 
               {/* Contracts Section */}
               <div className="w-full p-4 flex flex-col justify-start items-start">
-                <div className="w-full rounded-xl flex justify-between items-start">
-                  <div className="w-152 h-43 flex flex-col justify-start items-start gap-4">
+                <div className="w-full rounded-xl p-6" style={{ background: 'rgba(41, 48, 56, 0.5)' }}>
+                  <div className="flex flex-col justify-start items-start gap-4">
                     <div className="w-full flex flex-col justify-start items-start gap-1">
                       <div className="w-full flex flex-col justify-start items-start">
                         <div className="w-full text-white text-base font-bold leading-5" style={{ fontFamily: 'Inter' }}>
@@ -108,7 +112,7 @@ export default function DashboardPage() {
                     </div>
                     <button
                       onClick={() => router.push('/contracts')}
-                      className="h-8 max-w-120 min-w-21 px-4 pr-2 overflow-hidden rounded-2xl flex justify-center items-center gap-1"
+                      className="h-8 px-4 pr-2 overflow-hidden rounded-2xl flex justify-center items-center gap-1"
                       style={{ background: '#293038' }}
                     >
                       <div className="overflow-hidden flex flex-col justify-start items-center">
@@ -123,14 +127,13 @@ export default function DashboardPage() {
                       </div>
                     </button>
                   </div>
-                  <div className="flex-1 h-43 relative rounded-xl bg-gray-200"></div>
                 </div>
               </div>
 
               {/* Clients Section */}
               <div className="w-full p-4 flex flex-col justify-start items-start">
-                <div className="w-full rounded-xl flex justify-between items-start">
-                  <div className="w-152 h-43 flex flex-col justify-start items-start gap-4">
+                <div className="w-full rounded-xl p-6" style={{ background: 'rgba(41, 48, 56, 0.5)' }}>
+                  <div className="flex flex-col justify-start items-start gap-4">
                     <div className="w-full flex flex-col justify-start items-start gap-1">
                       <div className="w-full flex flex-col justify-start items-start">
                         <div className="w-full text-white text-base font-bold leading-5" style={{ fontFamily: 'Inter' }}>
@@ -145,7 +148,7 @@ export default function DashboardPage() {
                     </div>
                     <button
                       onClick={() => router.push('/clients')}
-                      className="h-8 max-w-120 min-w-21 px-4 pr-2 overflow-hidden rounded-2xl flex justify-center items-center gap-1"
+                      className="h-8 px-4 pr-2 overflow-hidden rounded-2xl flex justify-center items-center gap-1"
                       style={{ background: '#293038' }}
                     >
                       <div className="overflow-hidden flex flex-col justify-start items-center">
@@ -160,44 +163,6 @@ export default function DashboardPage() {
                       </div>
                     </button>
                   </div>
-                  <div className="flex-1 h-43 relative rounded-xl bg-gray-200"></div>
-                </div>
-              </div>
-
-              {/* Analyze Contract Section */}
-              <div className="w-full p-4 flex flex-col justify-start items-start">
-                <div className="w-full rounded-xl flex justify-between items-start">
-                  <div className="w-152 h-43 flex flex-col justify-start items-start gap-4">
-                    <div className="w-full flex flex-col justify-start items-start gap-1">
-                      <div className="w-full flex flex-col justify-start items-start">
-                        <div className="w-full text-white text-base font-bold leading-5" style={{ fontFamily: 'Inter' }}>
-                          Analyze Contract
-                        </div>
-                      </div>
-                      <div className="w-full flex flex-col justify-start items-start">
-                        <div className="w-full text-sm font-normal leading-5" style={{ color: '#9CABBA', fontFamily: 'Inter' }}>
-                          Run AI analysis on a new contract
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => router.push('/analyze')}
-                      className="h-8 max-w-120 min-w-21 px-4 pr-2 overflow-hidden rounded-2xl flex justify-center items-center gap-1"
-                      style={{ background: '#293038' }}
-                    >
-                      <div className="overflow-hidden flex flex-col justify-start items-center">
-                        <div className="text-center text-white text-sm font-medium leading-5" style={{ fontFamily: 'Inter' }}>
-                          Analyze Contract
-                        </div>
-                      </div>
-                      <div className="flex flex-col justify-start items-center">
-                        <div className="w-4.5 flex-1 relative overflow-hidden">
-                          <ArrowRight className="w-4.5 h-4.5 text-white" />
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-                  <div className="flex-1 h-43 relative rounded-xl bg-gray-200"></div>
                 </div>
               </div>
             </div>

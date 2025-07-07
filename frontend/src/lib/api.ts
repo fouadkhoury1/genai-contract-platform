@@ -47,13 +47,15 @@ export const endpoints = {
   contracts: '/api/contracts/',
   contractAnalysis: (id: string) => `/api/contracts/${id}/analysis/`,
   contractEvaluation: '/api/contracts/evaluate/',
+  reanalyzeContract: (id: string) => `/api/contracts/${id}/reanalyze/`,
+  extractClauses: (id: string) => `/api/contracts/${id}/extract_clauses/`,
   
   // Client endpoints
   clients: '/api/clients/',
   
   // Service endpoints
-  health: '/api/health/',
-  ready: '/api/ready/',
-  metrics: '/api/metrics/',
-  logs: '/api/logs/',
+  health: '/healthz/',
+  ready: '/readyz/',
+  metrics: '/metrics/',
+  logs: '/logs/',
 } as const; 

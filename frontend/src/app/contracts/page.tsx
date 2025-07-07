@@ -57,6 +57,22 @@ export default function ContractsPage() {
     (currentPage - 1) * contractsPerPage,
     currentPage * contractsPerPage
   );
+  const [showReanalyzeForm, setShowReanalyzeForm] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [reanalyzeTitle, setReanalyzeTitle] = useState('');
+  const reanalyzeFileInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<'analysis' | 'clauses'>('analysis');
+  const [extractingClauses, setExtractingClauses] = useState(false);
+  const [clauses, setClauses] = useState<any[]>([]);
+  const [clausesError, setClausesError] = useState<string | null>(null);
+
+  // List of known error messages from backend
+  const KNOWN_ANALYSIS_ERRORS = [
+    'Contract analysis temporarily unavailable due to connection issues. Please try again later.',
+    'Contract analysis temporarily unavailable due to network timeout. Please try again later.',
+    'Contract analysis failed: No successful chunk analyses.',
+    'Contract analysis failed: No analysis available.',
+  ];
 
   // Close menu on outside click
   useEffect(() => {
@@ -222,18 +238,38 @@ export default function ContractsPage() {
         return;
       }
       
-      // Fetch detailed analysis from backend
-      const analysis = await contractService.getContractAnalysis(contract.id);
-      
-      // Get the full contract data to access approved and evaluation_reasoning
+      // Get the full contract data first
       const fullContract = await contractService.getContract(contract.id);
       
+      // If the contract already has analysis results, use those
+      if (fullContract.analysis && fullContract.evaluation_reasoning) {
+        setSelectedContract({
+          ...fullContract,
+          analysisResults: {
+            approved: fullContract.approved,
+            reasoning: fullContract.analysis,
+            clauseCount: fullContract.clauses?.length || 0
+          }
+        });
+        setShowAnalysisModal(true);
+        return;
+      }
+      
+      // Otherwise, fetch detailed analysis from backend
+      const analysis = await contractService.getContractAnalysis(contract.id);
+      
+      // Check for error in the response
+      if ((analysis as any).error) {
+        toast.error((analysis as any).error);
+        return;
+      }
+      
       setSelectedContract({
-        ...contract,
+        ...fullContract,
         analysisResults: {
-          approved: fullContract.status === 'approved',
-          reasoning: fullContract.analysisResults?.reasoning || analysis.analysis,
-          clauseCount: 0
+          approved: fullContract.approved,
+          reasoning: analysis.analysis,
+          clauseCount: fullContract.clauses?.length || 0
         }
       });
       setShowAnalysisModal(true);
@@ -368,6 +404,99 @@ export default function ContractsPage() {
         left: rect.right + window.scrollX - 160, // align right edge, menu width ~160px
       });
       setOpenMenuId(contractId);
+    }
+  };
+
+  const handleReanalyzeContract = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedContract) return;
+
+    const file = reanalyzeFileInputRef.current?.files?.[0];
+    if (!file) {
+      toast.error('Please select a file to reanalyze.');
+      return;
+    }
+
+    setReanalyzing(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', reanalyzeTitle || selectedContract.title);
+      formData.append('client', selectedContract.client || '');
+
+      const result = await contractService.reanalyzeContract(selectedContract.id, formData);
+
+      // Check for error in the response
+      if ((result as any).error) {
+        toast.error((result as any).error);
+        setReanalyzing(false);
+        return;
+      }
+
+      // Update the selected contract with new analysis
+      setSelectedContract({
+        ...selectedContract,
+        title: reanalyzeTitle || selectedContract.title,
+        status: result.approved ? 'approved' : 'rejected',
+        analysisResults: {
+          approved: result.approved,
+          reasoning: result.evaluation_reasoning || result.analysis,
+          clauseCount: 0
+        }
+      });
+
+      // Update the contract in the list
+      setContracts(prevContracts =>
+        prevContracts.map(c =>
+          c.id === selectedContract.id
+            ? {
+                ...c,
+                title: reanalyzeTitle || selectedContract.title,
+                status: result.approved ? 'approved' : 'rejected',
+                analysisResults: {
+                  approved: result.approved,
+                  reasoning: result.evaluation_reasoning || result.analysis,
+                  clauseCount: 0
+                }
+              }
+            : c
+        )
+      );
+
+      toast.success('Contract reanalyzed successfully!');
+      setReanalyzeTitle('');
+      if (reanalyzeFileInputRef.current) {
+        reanalyzeFileInputRef.current.value = '';
+      }
+      setShowReanalyzeForm(false);
+    } catch (error) {
+      console.error('Error reanalyzing contract:', error);
+      toast.error('Failed to reanalyze contract.');
+    } finally {
+      setReanalyzing(false);
+    }
+  };
+
+  const handleExtractClauses = async (contract: FrontendContract) => {
+    setExtractingClauses(true);
+    setClausesError(null);
+    try {
+      const result = await contractService.extractClauses(contract.id);
+      if ((result as any).error) {
+        setClausesError((result as any).error);
+        setClauses([]);
+      } else {
+        setClauses(result.clauses || []);
+        setClausesError(null);
+        setActiveTab('clauses');
+        toast.success(`${result.clause_count || 0} clauses extracted successfully`);
+      }
+    } catch (error) {
+      setClausesError('Failed to extract clauses');
+      setClauses([]);
+      toast.error('Failed to extract clauses');
+    } finally {
+      setExtractingClauses(false);
     }
   };
 
@@ -715,73 +844,186 @@ export default function ContractsPage() {
       {/* Analysis Modal */}
       {showAnalysisModal && selectedContract && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-[#181A1D] rounded-2xl p-8 w-full max-w-4xl max-h-[80vh] overflow-y-auto shadow-xl relative">
+          <div className="bg-[#181A1D] rounded-2xl p-8 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-xl relative" style={{ fontFamily: 'Inter', zIndex: 10000 }}>
             <button
               className="absolute top-4 right-4 text-[#9CABBA] hover:text-white text-2xl"
               onClick={() => setShowAnalysisModal(false)}
             >
               ×
             </button>
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold mb-2 text-white" style={{ fontFamily: 'Inter' }}>{selectedContract.title}</h2>
-              <div className="flex items-center gap-4 text-sm text-[#9CABBA]">
-                <span>Client: {selectedContract.client || 'No client'}</span>
-                <span>Date: {formatDate(selectedContract.uploadDate)}</span>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  selectedContract.status === 'approved'
-                    ? 'bg-green-500/20 text-green-400'
-                    : selectedContract.status === 'rejected'
-                    ? 'bg-red-500/20 text-red-400'
-                    : selectedContract.status === 'completed'
-                    ? 'bg-green-500/20 text-green-400'
-                    : selectedContract.status === 'analyzing'
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : 'bg-gray-500/20 text-gray-400'
-                }`}>
-                  {selectedContract.status === 'approved'
-                    ? 'Approved'
-                    : selectedContract.status === 'rejected'
-                    ? 'Not Approved'
-                    : selectedContract.status === 'completed'
-                    ? 'Completed'
-                    : selectedContract.status === 'analyzing'
-                    ? 'Analyzing'
-                    : 'Unknown'}
-                </span>
+            <div className="space-y-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-white mb-2">{selectedContract.title}</h2>
+                  <div className="flex items-center gap-4 mb-2">
+                    <p className="text-[#9CABBA]">Client: {selectedContract.client}</p>
+                    <span className={`px-3 py-1 rounded-full text-sm ${getStatusBadge(selectedContract.status)}`}>
+                      {getStatusLabel(selectedContract.status)}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => setShowReanalyzeForm(true)}
+                      className="h-8 px-4 text-white rounded text-xs font-medium hover:opacity-90 transition-opacity"
+                      style={{ backgroundColor: '#293038', fontFamily: 'Inter', fontSize: '12px' }}
+                    >
+                      Reanalyze
+                    </button>
+                    <button
+                      onClick={() => handleExtractClauses(selectedContract)}
+                      className="h-8 px-4 text-white rounded text-xs font-medium hover:opacity-90 transition-opacity"
+                      style={{ backgroundColor: extractingClauses ? '#6B7280' : '#23262B', fontFamily: 'Inter', fontSize: '12px' }}
+                      disabled={extractingClauses}
+                    >
+                      {extractingClauses ? 'Extracting...' : 'Extract Clauses'}
+                    </button>
+                  </div>
+                </div>
               </div>
+
+              {/* Tabs */}
+              <div className="flex gap-2 border-b border-[#23262B] mb-2">
+                <button
+                  className={`px-4 py-2 text-sm font-medium rounded-t ${activeTab === 'analysis' ? 'bg-[#23262B] text-white' : 'text-[#9CABBA]'}`}
+                  onClick={() => setActiveTab('analysis')}
+                >
+                  AI Analysis
+                </button>
+                <button
+                  className={`px-4 py-2 text-sm font-medium rounded-t ${activeTab === 'clauses' ? 'bg-[#23262B] text-white' : 'text-[#9CABBA]'}`}
+                  onClick={() => setActiveTab('clauses')}
+                >
+                  Extracted Clauses
+                </button>
+              </div>
+
+              {/* Tab Content */}
+              {activeTab === 'analysis' && (
+                showReanalyzeForm ? (
+                  <div className="bg-[#23262B] rounded-xl p-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold text-white" style={{ fontFamily: 'Inter' }}>Reanalyze Contract</h3>
+                      <button
+                        onClick={() => {
+                          setShowReanalyzeForm(false);
+                          setReanalyzeTitle('');
+                          if (reanalyzeFileInputRef.current) {
+                            reanalyzeFileInputRef.current.value = '';
+                          }
+                        }}
+                        className="text-[#9CABBA] hover:text-white"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <form onSubmit={handleReanalyzeContract} className="space-y-4">
+                      <label className="block text-sm font-medium text-[#9CABBA] mb-2" style={{ fontFamily: 'Inter' }}>
+                        New Title (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={reanalyzeTitle}
+                        onChange={(e) => setReanalyzeTitle(e.target.value)}
+                        placeholder={selectedContract.title}
+                        className="w-full h-10 px-3 bg-[#181A1D] border border-[#2A2D31] rounded-lg text-white placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        style={{ fontFamily: 'Inter' }}
+                      />
+                      <div>
+                        <label className="block text-sm font-medium text-[#9CABBA] mb-2" style={{ fontFamily: 'Inter' }}>
+                          Upload New Contract File
+                        </label>
+                        <div className="flex gap-4">
+                          <input
+                            ref={reanalyzeFileInputRef}
+                            type="file"
+                            accept=".pdf,.txt"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file && !reanalyzeTitle) {
+                                setReanalyzeTitle(file.name.split('.')[0]);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => reanalyzeFileInputRef.current?.click()}
+                            className="h-10 px-4 bg-[#181A1D] border border-[#2A2D31] rounded-lg text-white text-sm font-medium hover:bg-[#23262B] transition-colors flex items-center gap-2"
+                            style={{ fontFamily: 'Inter' }}
+                          >
+                            <Upload className="w-4 h-4" />
+                            Select File
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={reanalyzing || !reanalyzeFileInputRef.current?.files?.[0]}
+                            className="h-10 px-6 bg-blue-500 rounded-lg text-white text-sm font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            style={{ fontFamily: 'Inter' }}
+                          >
+                            {reanalyzing ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Analyzing...
+                              </>
+                            ) : (
+                              'Analyze Contract'
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+                ) : (
+                  selectedContract.analysisResults ? (
+                    <div className="bg-[#23262B] rounded-xl p-6" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                      <h3 className="text-lg font-semibold mb-4 text-white" style={{ fontFamily: 'Inter' }}>AI Analysis Results</h3>
+                      <div className="text-sm text-[#9CABBA] leading-relaxed" style={{ fontFamily: 'Inter' }}>
+                        {KNOWN_ANALYSIS_ERRORS.includes(selectedContract.analysisResults.reasoning.trim()) ? (
+                          <span>No analysis results available. Please try reanalyzing the contract.</span>
+                        ) : (
+                          <AnalysisMarkdown markdown={selectedContract.analysisResults.reasoning} />
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-[#9CABBA]" style={{ fontFamily: 'Inter' }}>No analysis results available</p>
+                    </div>
+                  )
+                )
+              )}
+              {activeTab === 'clauses' && (
+                <div className="bg-[#23262B] rounded-xl p-6" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                  <h3 className="text-lg font-semibold mb-4 text-white" style={{ fontFamily: 'Inter' }}>Extracted Clauses</h3>
+                  {clausesError ? (
+                    <div className="text-red-400 mb-2">{clausesError}</div>
+                  ) : extractingClauses ? (
+                    <div className="text-[#9CABBA]">Extracting clauses...</div>
+                  ) : clauses.length === 0 ? (
+                    <div className="text-[#9CABBA]">No clauses extracted yet. Click "Extract Clauses" to begin.</div>
+                  ) : (
+                    <div className="space-y-4">
+                      {clauses.map((clause, idx) => (
+                        <div key={idx} className="p-4 rounded-lg bg-[#181A1D] border border-[#23262B]">
+                          <div className="flex flex-wrap gap-2 mb-1">
+                            <span className="text-xs font-semibold text-blue-400">{clause.type}</span>
+                            <span className={`text-xs font-semibold rounded px-2 py-0.5 ${clause.risk_level === 'high' ? 'bg-red-500/20 text-red-400' : clause.risk_level === 'medium' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-green-500/20 text-green-400'}`}>{clause.risk_level}</span>
+                          </div>
+                          <div className="text-sm text-white mb-2" style={{ fontFamily: 'Inter' }}>
+                            {clause.content}
+                          </div>
+                          {clause.obligations && clause.obligations.length > 0 && (
+                            <div className="text-xs text-[#9CABBA]">
+                              <span className="font-semibold">Obligations:</span> {clause.obligations.join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            
-            {selectedContract.analysisResults ? (
-              <div className="space-y-6">
-                <div className="bg-[#23262B] rounded-xl p-6">
-                  <h3 className="text-lg font-semibold mb-4 text-white" style={{ fontFamily: 'Inter' }}>AI Analysis Results</h3>
-                  <div className="text-sm text-[#9CABBA] leading-relaxed" style={{ fontFamily: 'Inter' }}>
-                    <AnalysisMarkdown markdown={selectedContract.analysisResults.reasoning} />
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-[#23262B] rounded-xl p-4">
-                    <h4 className="text-sm font-semibold mb-2 text-white" style={{ fontFamily: 'Inter' }}>Signed</h4>
-                    <p className="text-sm text-[#9CABBA]" style={{ fontFamily: 'Inter' }}>
-                      {selectedContract.signed ? 'Signed' : 'Not Signed'}
-                    </p>
-                  </div>
-                  <div className="bg-[#23262B] rounded-xl p-4">
-                    <h4 className="text-sm font-semibold mb-2 text-white" style={{ fontFamily: 'Inter' }}>File Size</h4>
-                    <p className="text-sm text-[#9CABBA]" style={{ fontFamily: 'Inter' }}>{selectedContract.fileSize}</p>
-                  </div>
-                  <div className="bg-[#23262B] rounded-xl p-4">
-                    <h4 className="text-sm font-semibold mb-2 text-white" style={{ fontFamily: 'Inter' }}>Upload Date</h4>
-                    <p className="text-sm text-[#9CABBA]" style={{ fontFamily: 'Inter' }}>{formatDate(selectedContract.uploadDate)}</p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <p className="text-[#9CABBA]" style={{ fontFamily: 'Inter' }}>No analysis results available</p>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -852,7 +1094,10 @@ export default function ContractsPage() {
           left={menuPosition.left}
           onEdit={() => handleEditContract(contracts.find(c => c.id === openMenuId)!)}
           onDelete={() => handleDeleteContract(openMenuId)}
-          onClose={() => setOpenMenuId(null)}
+          onClose={() => {
+            setOpenMenuId(null);
+            setMenuPosition(null);
+          }}
         />
       )}
     </div>
@@ -891,6 +1136,7 @@ function DropdownMenu({ top, left, onEdit, onDelete, onClose }: { top: number; l
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [onClose]);
+
   return createPortal(
     <div
       style={{
