@@ -22,11 +22,13 @@ from apps.clients_contracts.views import (
     ContractAnalysisView,
     ContractAnalysisDetailView,
     ContractEvaluationView,
+    ContractClauseExtractionView,
     HealthzView,
     ReadyzView,
     MetricsView,
     LogsView,
     ClientListCreateView,
+    ClientDetailView,
     ClientContractsView
 )
 from apps.authentication.views import RegisterView, LoginView
@@ -41,11 +43,12 @@ urlpatterns = [
     path('api/contracts/<str:contract_id>/analysis/', ContractAnalysisDetailView.as_view(), name='contract-analysis-detail'),
     path('api/contracts/<str:contract_id>/', ContractDetailView.as_view(), name='contract-detail'),
   
-    path('genai/analyze-contract/', ContractAnalysisView.as_view(), name='genai-analyze-contract'),
+    path('genai/analyze-contract/<str:contract_id>/', ContractClauseExtractionView.as_view(), name='genai-analyze-contract'),
     path('contracts/<str:contract_id>/init-genai/', ContractAnalysisView.as_view(), name='init-genai-analysis'),
     path('genai/evaluate-contract/', ContractEvaluationView.as_view(), name='genai-evaluate-contract'),
     path('api/auth/register/', RegisterView.as_view(), name='auth-register'),
     path('api/auth/login/', LoginView.as_view(), name='auth-login'),
-    path('clients/', ClientListCreateView.as_view(), name='client-list-create'),
-    path('clients/<str:client_id>/contracts/', ClientContractsView.as_view(), name='client-contracts'),
+    path('api/clients/', ClientListCreateView.as_view(), name='client-list-create'),
+    path('api/clients/<str:client_id>/', ClientDetailView.as_view(), name='client-detail'),
+    path('api/clients/<str:client_id>/contracts/', ClientContractsView.as_view(), name='client-contracts'),
 ]

@@ -1,11 +1,57 @@
 import requests
 import os
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import concurrent.futures
+import re
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_MODEL = "deepseek-reasoner"
 
+# Configure retry strategy
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+)
+
+adapter = HTTPAdapter(max_retries=retry_strategy)
+session = requests.Session()
+session.mount("https://", adapter)
+session.mount("http://", adapter)
+
 class AIService:
+    @staticmethod
+    def test_api_connection() -> bool:
+        """Test if the DeepSeek API is accessible."""
+        try:
+            headers = {
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": DEEPSEEK_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Hello"
+                    }
+                ],
+                "max_tokens": 10
+            }
+            
+            response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            return False
+
     @staticmethod
     def analyze_contract(contract_text: str) -> dict:
         """Analyze contract text and extract clauses, risks, and obligations."""
@@ -33,7 +79,8 @@ class AIService:
         }
 
         try:
-            response = requests.post(DEEPSEEK_API_URL, json=payload, headers=headers)
+            response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=60)
+            
             response.raise_for_status()
             result = response.json()
             model_reply = result["choices"][0]["message"]["content"]
@@ -41,8 +88,215 @@ class AIService:
                 "analysis": model_reply,
                 "model_used": "DeepSeek Reasoning Model (Live)"
             }
+        except requests.exceptions.Timeout:
+            return {
+                "analysis": "Contract analysis temporarily unavailable due to network timeout. Please try again later.",
+                "model_used": "Fallback Response"
+            }
+        except requests.exceptions.ConnectionError as e:
+            return {
+                "analysis": "Contract analysis temporarily unavailable due to connection issues. Please try again later.",
+                "model_used": "Fallback Response"
+            }
         except Exception as e:
-            raise Exception(f"AI analysis failed: {str(e)}")
+            return {
+                "analysis": f"Contract analysis failed: {str(e)}. Please try again later.",
+                "model_used": "Fallback Response"
+            }
+
+    @staticmethod
+    def extract_clauses(contract_text: str) -> dict:
+        """Extract and classify contract clauses with metadata. Use deepseek-chat (V3-0324) for speed."""
+        def chunk_text(text, chunk_size=20000):
+            return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        CHAT_MODEL = "deepseek-chat"  # Fastest model per DeepSeek docs
+
+        if len(contract_text) > 50000:
+            chunks = chunk_text(contract_text, 20000)
+            all_clauses = []
+            errors = []
+            def process_chunk(idx_chunk):
+                idx, chunk = idx_chunk
+                payload = {
+                    "model": CHAT_MODEL,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a legal AI specialized in contract clause extraction and classification. "
+                                "Given a contract text, extract all clauses and classify them by type. "
+                                "For each clause, provide: type, content, risk_level (low/medium/high), and obligations. "
+                                "Return ONLY a valid JSON array with this structure:\n"
+                                "[\n"
+                                "  {\n"
+                                "    \"type\": \"clause_type\",\n"
+                                "    \"content\": \"full clause text\",\n"
+                                "    \"risk_level\": \"low|medium|high\",\n"
+                                "    \"obligations\": [\"obligation1\", \"obligation2\"]\n"
+                                "  }\n"
+                                "]\n"
+                                "Common clause types: Termination, Payment Terms, Liability, Confidentiality, "
+                                "Intellectual Property, Force Majeure, Dispute Resolution, Non-Compete, "
+                                "Data Protection, Service Level Agreement, etc."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": chunk
+                        }
+                    ]
+                }
+                try:
+                    response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=120)
+                    response.raise_for_status()
+                    result = response.json()
+                    model_reply = result["choices"][0]["message"]["content"]
+                    
+                    clauses = json.loads(model_reply)
+                    if isinstance(clauses, list):
+                        return (clauses, None)
+                    else:
+                        return ([], f"Chunk {idx+1}: Response is not a list")
+                except json.JSONDecodeError as e:
+                    # Try to recover partial clauses using regex
+                    clause_pattern = re.compile(r'\{[^\{\}]*\}')
+                    matches = clause_pattern.findall(model_reply)
+                    partial_clauses = []
+                    for m in matches:
+                        try:
+                            obj = json.loads(m)
+                            partial_clauses.append(obj)
+                        except Exception as ex:
+                            continue
+                    if partial_clauses:
+                        return {
+                            "clauses": partial_clauses,
+                            "clause_count": len(partial_clauses),
+                            "error": f"Partial extraction: {str(e)}",
+                            "raw_response": model_reply,
+                            "model_used": CHAT_MODEL
+                        }
+                    return {
+                        "clauses": [],
+                        "clause_count": 0,
+                        "error": f"Failed to parse AI response as JSON: {str(e)}",
+                        "raw_response": model_reply,
+                        "model_used": CHAT_MODEL
+                    }
+                except requests.exceptions.Timeout as e:
+                    return ([], f"Chunk {idx+1}: Request timed out")
+                except requests.exceptions.ConnectionError as e:
+                    return ([], f"Chunk {idx+1}: Connection error")
+                except Exception as e:
+                    return ([], f"Chunk {idx+1}: {str(e)}")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                results = list(executor.map(process_chunk, enumerate(chunks)))
+            for clauses, error in results:
+                all_clauses.extend(clauses)
+                if error:
+                    errors.append(error)
+            return {
+                "clauses": all_clauses,
+                "clause_count": len(all_clauses),
+                "model_used": CHAT_MODEL,
+                "error": "; ".join(errors) if errors else None
+            }
+        else:
+            payload = {
+                "model": CHAT_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a legal AI specialized in contract clause extraction and classification. "
+                            "Given a contract text, extract all clauses and classify them by type. "
+                            "For each clause, provide: type, content, risk_level (low/medium/high), and obligations. "
+                            "Return ONLY a valid JSON array with this structure:\n"
+                            "[\n"
+                            "  {\n"
+                            "    \"type\": \"clause_type\",\n"
+                            "    \"content\": \"full clause text\",\n"
+                            "    \"risk_level\": \"low|medium|high\",\n"
+                            "    \"obligations\": [\"obligation1\", \"obligation2\"]\n"
+                            "  }\n"
+                            "]\n"
+                            "Common clause types: Termination, Payment Terms, Liability, Confidentiality, "
+                            "Intellectual Property, Force Majeure, Dispute Resolution, Non-Compete, "
+                            "Data Protection, Service Level Agreement, etc."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": contract_text
+                    }
+                ]
+            }
+            try:
+                response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=120)
+                response.raise_for_status()
+                result = response.json()
+                model_reply = result["choices"][0]["message"]["content"]
+                
+                clauses = json.loads(model_reply)
+                if not isinstance(clauses, list):
+                    raise ValueError("Response is not a list")
+                return {
+                    "clauses": clauses,
+                    "clause_count": len(clauses),
+                    "model_used": CHAT_MODEL
+                }
+            except json.JSONDecodeError as e:
+                # Try to recover partial clauses using regex
+                clause_pattern = re.compile(r'\{[^\{\}]*\}')
+                matches = clause_pattern.findall(model_reply)
+                partial_clauses = []
+                for m in matches:
+                    try:
+                        obj = json.loads(m)
+                        partial_clauses.append(obj)
+                    except Exception as ex:
+                        continue
+                if partial_clauses:
+                    return {
+                        "clauses": partial_clauses,
+                        "clause_count": len(partial_clauses),
+                        "error": f"Partial extraction: {str(e)}",
+                        "raw_response": model_reply,
+                        "model_used": CHAT_MODEL
+                    }
+                return {
+                    "clauses": [],
+                    "clause_count": 0,
+                    "error": f"Failed to parse AI response as JSON: {str(e)}",
+                    "raw_response": model_reply,
+                    "model_used": CHAT_MODEL
+                }
+            except requests.exceptions.Timeout as e:
+                return {
+                    "clauses": [],
+                    "clause_count": 0,
+                    "error": "Clause extraction temporarily unavailable due to network timeout.",
+                    "model_used": "Fallback Response"
+                }
+            except requests.exceptions.ConnectionError as e:
+                return {
+                    "clauses": [],
+                    "clause_count": 0,
+                    "error": "Clause extraction temporarily unavailable due to connection issues.",
+                    "model_used": "Fallback Response"
+                }
+            except Exception as e:
+                return {
+                    "clauses": [],
+                    "clause_count": 0,
+                    "error": f"Clause extraction failed: {str(e)}",
+                    "model_used": "Fallback Response"
+                }
 
     @staticmethod
     def evaluate_contract(contract_text: str) -> dict:
@@ -71,7 +325,7 @@ class AIService:
         }
 
         try:
-            response = requests.post(DEEPSEEK_API_URL, json=payload, headers=headers)
+            response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=60)
             response.raise_for_status()
             result = response.json()
             reply = result["choices"][0]["message"]["content"]
@@ -80,5 +334,18 @@ class AIService:
                 "approved": approved,
                 "reasoning": reply.strip()
             }
+        except requests.exceptions.Timeout:
+            return {
+                "approved": False,
+                "reasoning": "Contract evaluation temporarily unavailable due to network timeout. Please try again later."
+            }
+        except requests.exceptions.ConnectionError as e:
+            return {
+                "approved": False,
+                "reasoning": "Contract evaluation temporarily unavailable due to connection issues. Please try again later."
+            }
         except Exception as e:
-            raise Exception(f"Contract evaluation failed: {str(e)}") 
+            return {
+                "approved": False,
+                "reasoning": f"Contract evaluation failed: {str(e)}. Please try again later."
+            } 
