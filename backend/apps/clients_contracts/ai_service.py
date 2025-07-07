@@ -5,6 +5,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import concurrent.futures
 import re
+import json
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
@@ -175,6 +176,7 @@ class AIService:
     @staticmethod
     def extract_clauses(contract_text: str) -> dict:
         """Extract and classify contract clauses with metadata. Use deepseek-chat (V3-0324) for speed."""
+        print(f"[DEBUG] extract_clauses: contract_text length = {len(contract_text) if contract_text else 0}")
         def chunk_text(text, chunk_size=20000):
             return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
@@ -220,47 +222,31 @@ class AIService:
                     ]
                 }
                 try:
+                    print(f"[DEBUG] [Chunk {idx+1}/{len(chunks)}] Sending request to DeepSeek...")
                     response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=120)
+                    print(f"[DEBUG] [Chunk {idx+1}] DeepSeek HTTP status: {response.status_code}")
                     response.raise_for_status()
                     result = response.json()
+                    print(f"[DEBUG] [Chunk {idx+1}] DeepSeek raw response: {result}")
                     model_reply = result["choices"][0]["message"]["content"]
-                    
+                    print(f"[DEBUG] [Chunk {idx+1}] DeepSeek model_reply: {model_reply[:500]}... (truncated)")
                     clauses = json.loads(model_reply)
                     if isinstance(clauses, list):
                         return (clauses, None)
                     else:
                         return ([], f"Chunk {idx+1}: Response is not a list")
                 except json.JSONDecodeError as e:
-                    # Try to recover partial clauses using regex
-                    clause_pattern = re.compile(r'\{[^\{\}]*\}')
-                    matches = clause_pattern.findall(model_reply)
-                    partial_clauses = []
-                    for m in matches:
-                        try:
-                            obj = json.loads(m)
-                            partial_clauses.append(obj)
-                        except Exception as ex:
-                            continue
-                    if partial_clauses:
-                        return {
-                            "clauses": partial_clauses,
-                            "clause_count": len(partial_clauses),
-                            "error": f"Partial extraction: {str(e)}",
-                            "raw_response": model_reply,
-                            "model_used": CHAT_MODEL
-                        }
-                    return {
-                        "clauses": [],
-                        "clause_count": 0,
-                        "error": f"Failed to parse AI response as JSON: {str(e)}",
-                        "raw_response": model_reply,
-                        "model_used": CHAT_MODEL
-                    }
+                    print(f"[DEBUG] [Chunk {idx+1}] JSONDecodeError: {str(e)}")
+                    print(f"[DEBUG] [Chunk {idx+1}] model_reply: {model_reply[:500]}... (truncated)")
+                    return ([], f"Chunk {idx+1}: JSONDecodeError: {str(e)}")
                 except requests.exceptions.Timeout as e:
+                    print(f"[DEBUG] [Chunk {idx+1}] Timeout: {str(e)}")
                     return ([], f"Chunk {idx+1}: Request timed out")
                 except requests.exceptions.ConnectionError as e:
+                    print(f"[DEBUG] [Chunk {idx+1}] ConnectionError: {str(e)}")
                     return ([], f"Chunk {idx+1}: Connection error")
                 except Exception as e:
+                    print(f"[DEBUG] [Chunk {idx+1}] Exception: {str(e)}")
                     return ([], f"Chunk {idx+1}: {str(e)}")
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                 results = list(executor.map(process_chunk, enumerate(chunks)))
@@ -268,6 +254,7 @@ class AIService:
                 all_clauses.extend(clauses)
                 if error:
                     errors.append(error)
+            print(f"[DEBUG] All chunk errors: {errors}")
             return {
                 "clauses": all_clauses,
                 "clause_count": len(all_clauses),
@@ -305,11 +292,14 @@ class AIService:
                 ]
             }
             try:
+                print("[DEBUG] Sending request to DeepSeek for clause extraction...")
                 response = session.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=120)
+                print(f"[DEBUG] DeepSeek HTTP status: {response.status_code}")
                 response.raise_for_status()
                 result = response.json()
+                print(f"[DEBUG] DeepSeek raw response: {result}")
                 model_reply = result["choices"][0]["message"]["content"]
-                
+                print(f"[DEBUG] DeepSeek model_reply: {model_reply[:500]}... (truncated)")
                 clauses = json.loads(model_reply)
                 if not isinstance(clauses, list):
                     raise ValueError("Response is not a list")
@@ -319,6 +309,8 @@ class AIService:
                     "model_used": CHAT_MODEL
                 }
             except json.JSONDecodeError as e:
+                print(f"[DEBUG] JSONDecodeError: {str(e)}")
+                print(f"[DEBUG] model_reply: {model_reply[:500]}... (truncated)")
                 # Try to recover partial clauses using regex
                 clause_pattern = re.compile(r'\{[^\{\}]*\}')
                 matches = clause_pattern.findall(model_reply)
@@ -359,12 +351,8 @@ class AIService:
                     "model_used": "Fallback Response"
                 }
             except Exception as e:
-                return {
-                    "clauses": [],
-                    "clause_count": 0,
-                    "error": f"Clause extraction failed: {str(e)}",
-                    "model_used": "Fallback Response"
-                }
+                print(f"[DEBUG] Exception in extract_clauses: {str(e)}")
+                raise
 
     @staticmethod
     def evaluate_contract(contract_text: str) -> dict:
