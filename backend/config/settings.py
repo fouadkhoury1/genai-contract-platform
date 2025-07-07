@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "django_extensions",
     'corsheaders',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -136,6 +137,52 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# Spectacular settings for OpenAPI documentation
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'GenAI Contract Platform API',
+    'DESCRIPTION': 'AI-powered contract analysis and management platform API',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'CONTACT': {
+        'name': 'GenAI Platform Team',
+        'email': 'support@genai-platform.com',
+    },
+    'LICENSE': {
+        'name': 'MIT License',
+    },
+    'SERVERS': [
+        {
+            'url': 'http://localhost:8000',
+            'description': 'Development server',
+        },
+        {
+            'url': 'https://api.genai-platform.com',
+            'description': 'Production server',
+        },
+    ],
+    'TAGS': [
+        {
+            'name': 'Authentication',
+            'description': 'User authentication and authorization',
+        },
+        {
+            'name': 'Contracts',
+            'description': 'Contract management and AI analysis',
+        },
+        {
+            'name': 'Clients',
+            'description': 'Client management',
+        },
+        {
+            'name': 'System',
+            'description': 'System monitoring and health checks',
+        },
+    ],
+    'COMPONENT_SPLIT_REQUEST': True,
+    'COMPONENT_NO_READ_ONLY_REQUIRED': True,
 }
 
 # CORS settings for local frontend development
@@ -144,3 +191,21 @@ CORS_ALLOWED_ORIGINS = [
 ]
 # For development only, you can use the following instead (uncomment if needed):
 # CORS_ALLOW_ALL_ORIGINS = True
+
+# Redis Configuration for Caching
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
+
+# Cache time settings
+CACHE_TTL = 60 * 15  # 15 minutes
+
+# Session storage using Redis
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"

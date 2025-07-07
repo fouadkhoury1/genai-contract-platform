@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from apps.authentication.views import LoginView, RegisterView
 from apps.clients_contracts.views import (
     ContractListCreateView,
@@ -36,12 +37,23 @@ from apps.clients_contracts.views import (
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    
+    # OpenAPI Documentation
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    
+    # System monitoring
     path('healthz/', HealthzView.as_view(), name='health'),
     path('readyz/', ReadyzView.as_view(), name='ready'),
     path('metrics/', MetricsView.as_view(), name='metrics'),
     path('logs/', LogsView.as_view(), name='logs'),
+    
+    # Authentication
     path('api/auth/login/', LoginView.as_view(), name='login'),
     path('api/auth/register/', RegisterView.as_view(), name='register'),
+    
+    # Contracts
     path('api/contracts/', ContractListCreateView.as_view(), name='contracts'),
     path('api/contracts/<str:contract_id>/', ContractDetailView.as_view(), name='contract-detail'),
     path('api/contracts/<str:contract_id>/analysis/', ContractAnalysisDetailView.as_view(), name='contract-analysis-detail'),
@@ -49,6 +61,8 @@ urlpatterns = [
     path('api/contracts/<str:contract_id>/clauses/', ContractClauseExtractionView.as_view(), name='contract-clauses'),
     path('api/contracts/analyze/', ContractAnalysisView.as_view(), name='contract-analysis'),
     path('api/contracts/evaluate/', ContractEvaluationView.as_view(), name='contract-evaluation'),
+    
+    # Clients
     path('api/clients/', ClientListCreateView.as_view(), name='clients'),
     path('api/clients/<str:client_id>/', ClientDetailView.as_view(), name='client-detail'),
     path('api/clients/<str:client_id>/contracts/', ClientContractsView.as_view(), name='client-contracts'),
