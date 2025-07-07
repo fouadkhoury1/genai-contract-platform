@@ -1,4 +1,3 @@
-# genai-contract-platform
 # GenAI Contract Platform
 
 GenAI Contract Platform demonstrates how generative AI can help evaluate legal contracts. It consists of a Django REST API backend and a Next.js frontend that work together for authentication, contract uploads and AI-powered analysis.
